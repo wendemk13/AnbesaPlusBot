@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 # ===== KEYBOARD DEFINITION =====
 def get_main_keyboard():
     """Create the main menu keyboard with all your menu items"""
-    keyboard = [
+    keyboard = [        
+        ["Backoffice User Access Updates"],
         ["Digital Access Process"],
         ["How to unlock customer in the backoffice"],
         ["How to login to DBS backoffice"],
@@ -31,7 +32,6 @@ def get_main_keyboard():
         ["Android App Download link"],
         ["DBS End User Manual for Branches"],
         ["DBS Back Office / Portal User Access Request Form"],
-        ["Backoffice User Access Updates"]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -187,8 +187,36 @@ Video Tutorial: https://t.me/anbesaplus/1611."""
         )
     # Backoffice User Access Updates
     elif user_message == "Backoffice User Access Updates":
-        response = """Information on Updates to Backoffice User Access
-    https://t.me/anbesaplus/3900"""
+        response = """Upto last week (31/January)the remaining branches who are not granted access DBS backoffice are the following:
+
+1. Abala
+2. Ashewa_meda
+3. Atkilt_tera
+4. Ayat
+5. Bizet
+6. Desea
+7. Edaga_arbi_cso
+8. Edaga_selus
+9. Edagakedam
+10. Enqulal_fabrica
+11. Gijet
+12. Gonder
+13. Harar
+14. Jackros
+15. Korem
+16. Lachi_meneraia
+17. Logia
+18. Sealitemihret
+19. Sheger
+20. Shire_m.genet
+21. Shire_market
+22. Sultan_alimirah
+23. Wosen
+
+You will will receive SMS now.
+Those of you who didn't request access you are obliged to request.
+If you requested this week , wait for notifications. We shall send you soon. You are adviced to follow instructions. Use the request form we have shared to you. You will find the same in this group.
+"""
         
         await update.message.reply_text(
             response,
