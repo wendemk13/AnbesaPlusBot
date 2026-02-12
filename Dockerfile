@@ -20,6 +20,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project files
 COPY . .
 
+# Make sure response folder is copied
+COPY responses/ responses/
+
 
 # Command to run your bot (replace bot.py with your main file)
 CMD ["python", "Telegram_Bot.py"]

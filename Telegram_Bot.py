@@ -1,9 +1,33 @@
 from telegram import ReplyKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from pathlib import Path
 import logging
 from dotenv import load_dotenv
 import os
 
+
+# Holds Telegram file_ids for subsequent sends
+FILE_IDS = {}
+# Holds raw bytes for first upload
+FILE_CACHE = {}
+
+
+
+def load_files():
+    files_to_load = {
+        "digital_ambassador_pdf": "./responses/Designation of Tech-Native.pdf",
+        "digital_access_steps_video": "./responses/Digital Access Steps.mp4"
+    }
+
+    for key, path_str in files_to_load.items():
+        path = Path(path_str)
+        if path.exists():
+            FILE_CACHE[key] = path.read_bytes()
+            print(f"Loaded {key} into memory")
+        else:
+            print(f"File not found: {path}")
+
+load_files()
 load_dotenv()
 
 # ===== BOT CONFIGURATION =====
@@ -16,30 +40,100 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+async def send_cached_file(update: Update, key: str, caption: str = ""):
+    """
+    Sends a cached file (PDF, video, etc.) using Telegram file_id if available.
+    """
+    if key not in FILE_CACHE:
+        await update.message.reply_text(f"File '{key}' not found in cache.")
+        return
+
+    # Determine if file is PDF or Video
+    is_pdf = key.endswith("pdf")
+    is_video = key.endswith("video") or key.endswith("mov")
+
+    # First upload — store Telegram file_id
+    if key not in FILE_IDS:
+        if is_pdf:
+            msg = await update.message.reply_document(
+                document=FILE_CACHE[key],
+                filename=f"{key}.pdf",
+                caption=caption
+            )
+            FILE_IDS[key] = msg.document.file_id
+        elif is_video:
+            msg = await update.message.reply_video(
+                video=FILE_CACHE[key],
+                caption=caption,
+                thumbnail=open("./responses/thumbnails/Digital Access Thumbnail.jpeg", "rb"),
+                supports_streaming=True,
+            )
+            FILE_IDS[key] = msg.video.file_id
+
+        else:
+            await update.message.reply_text("Unsupported file type.")
+    else:
+        # Reuse Telegram file_id — instant
+        if is_pdf:
+            await update.message.reply_document(
+                document=FILE_IDS[key],
+                caption=caption
+            )
+        elif is_video:
+            await update.message.reply_video(
+                video=FILE_IDS[key],
+                caption=caption
+            )
+        else:
+            await update.message.reply_text("Unsupported file type.")
+
+
+# ===== KEYBOARD DEFINITION =====
+# def get_main_keyboard():
+#     """Create the main menu keyboard with all your menu items"""
+#     keyboard = [        
+#         # ["🔥🔥 IMMEDIATE ALERT (አስቸኳይ መረጃ) 🔥🔥"],
+#         ["Designation of Digital Ambassador"],
+#         ["❗️Announcements for Invalid Backoffice Requests"],
+#         ["Backoffice User Access Updates"],
+#         ["Digital Access Process"],
+#         ["How to unlock customer in the backoffice"],
+#         ["How to login to DBS backoffice"],
+#         ["What branches do when the customer is blocked"],
+#         ["ALREADY EXISTING PHONE NO"],
+#         ["How Anbesa Plus supports local language"],
+#         ["How to release trusted device"],
+#         ["How to search customer in DBS backoffice"],
+#         ["How Forgot password works"],
+#         ["Android App Download link"],
+#         ["Iphone App Download Link"],
+#         ["DBS End User Manual for Branches"],
+#         ["DBS Back Office / Portal User Access Request Form"],
+#         ["When OTP is not reaching to the customer's mobile"],
+#         ["Overlay Detected Avoid Entering Sensetive Information Error"]
+
+#     ]
+#     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
 # ===== KEYBOARD DEFINITION =====
 def get_main_keyboard():
-    """Create the main menu keyboard with all your menu items"""
-    keyboard = [        
-        # ["🔥🔥 IMMEDIATE ALERT (አስቸኳይ መረጃ) 🔥🔥"],
-                ["❗️Announcements for Invalid Backoffice Requests"],
-        ["Backoffice User Access Updates"],
-        ["Digital Access Process"],
-        ["How to unlock customer in the backoffice"],
-        ["How to login to DBS backoffice"],
-        ["What branches do when the customer is blocked"],
-        ["How Anbesa Plus supports local language"],
-        ["How to release trusted device"],
-        ["How to search customer in DBS backoffice"],
-        ["How Forgot password works"],
-        ["Android App Download link"],
-        ["Iphone App Download Link"],
-        ["DBS End User Manual for Branches"],
-        ["DBS Back Office / Portal User Access Request Form"],
-        ["When OTP is not reaching to the customer's mobile"],
-        ["Overlay Detected Avoid Entering Sensetive Information Error"]
-
+    """Create a more compact main menu keyboard"""
+    keyboard = [
+        ["🔥🔥 IMMEDIATE ALERT (አስቸኳይ መረጃ) 🔥🔥"],
+        ["Designation of Digital Ambassador"],
+        ["❗️Invalid Backoffice Requests","Backoffice Access Updates",],
+        ["Digital Access Process", "Login to DBS Backoffice"],
+        ["Blocked Customer", "Unlock Customer"],
+        ["Existing Phone Number", "Overlay Detected Error"],
+        [ "Unlock Trusted Device","Anbesa Plus local language"],
+        ["Search Customer", "Forgot Password", "OTP Not Reaching"], 
+        ["Android App Download", "Iphone App Download"], 
+        ["DBS End User Manual", "DBS Access Request Form"]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
 
 # ===== COMMAND HANDLERS =====
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -82,14 +176,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = """Digital Access Process
 Video Tutorial: https://t.me/anbesaplus/2506
 """
-        
+        # await send_cached_file(update, "digital_access_steps_video", "Here are the Digital Access Steps")
+
         await update.message.reply_text(
             response,
             reply_markup=get_main_keyboard()
         )
     
     # How to unlock customer in the backoffice
-    elif user_message == "How to unlock customer in the backoffice":
+    elif user_message == "Unlock Customer":
         response = """Steps to unlock customer in the DBS Backoffice 
 Video Tutorial: https://t.me/anbesaplus/2132
 """
@@ -101,16 +196,20 @@ Video Tutorial: https://t.me/anbesaplus/2132
             # How to unlock customer in the backoffice
     elif user_message == "🔥🔥 IMMEDIATE ALERT (አስቸኳይ መረጃ) 🔥🔥":
         response = """
-🔥* To make the rollout process of Anbesa Plus smooth and Successful, we have arranged online session for all branches. Branches are expected to dedicate atleast one person for this session.*
+🔥* To make the rollout process of Anbesa Plus Smooth and Successful, we have arranged Second Round online session for all branches. Branches are expected to dedicate atleast one person for this session.*
 
-*የአንበሳ ፕላስ መተግብሪያን እና የአንበሳ ባንክን የዲጅታል የለወጥ ሂደት የተሳካ እንዲሆን ለማድረግ ለሁሉም ቅርንጫፎች የኦላይን የጥያቄ እና መልስ ክፍለ ጊዜ አዘጋጅተናል። ከቅርንጫፍ ቢያንስ አንድ ሰው እንዲሳተፍ ግዴታ ነው።*
+*Digital Ambassadors of each branch must attend the session.*
 
-*🕧 ሰአት: ጠዋት 3:00*
+*የአንበሳ ፕላስ መተግብሪያን እና የአንበሳ ባንክን የዲጅታል የለወጥ ሂደት የተሳካ እንዲሆን ለማድረግ ለሁሉም ቅርንጫፎች ሁለተኛ ዙር የኦላይን የጥያቄ እና መልስ ክፍለ ጊዜ አዘጋጅተናል። ከቅርንጫፍ ቢያንስ አንድ ሰው እንዲሳተፍ ግዴታ ነው።*
 
-🔥 Title:  A Request for Online Session
+*የእያንዳንዱ ቅርንጫፍ ዲጂታል አምባሳደሮች መሳተፍ አለባቸው።*
 
-Anbesa Plus Rollout Online Session
-Saturday, February 7, 2026
+*🕧 ሰአት: ቅዳሜ ጠዋት 3:00*
+
+🔥 Title:  A Request for Second Round Online Session
+
+Anbesa Plus Rollout Second Round Online Session
+Saturday, February 14, 2026
 9:00 AM  |  (UTC+03:00) Nairobi  |  2 hrs 30 mins
 
 Meeting number (access code):  * 2554 485 2539*
@@ -126,7 +225,7 @@ https://anbesabank.webex.com/anbesabank/j.php?MTID=mb87517a0b86da76cd320a073a946
         )
     
     # How to login to DBS backoffice
-    elif user_message == "How to login to DBS backoffice":
+    elif user_message == "Login to DBS Backoffice":
         response = """Steps to Log in to DBS Backoffice
 Video Tutorial: https://t.me/anbesaplus/2252
 """
@@ -136,7 +235,7 @@ Video Tutorial: https://t.me/anbesaplus/2252
             reply_markup=get_main_keyboard()
         )
     # Overlay Detected Avoid Entering Sensetive Information Error
-    elif user_message == "Overlay Detected Avoid Entering Sensetive Information Error":
+    elif user_message == "Overlay Detected Error":
         response = """This error occurs when your device detected an app on top of Anbesa Plus—for example, a screen recorder or any app that can display over other apps. This is a security measure to protect sensitive information like passwords, PINs, or payment details.
 
 *ይህ የሚያጋጥመው ስልክዎ በአንበሳ ፕላስ መተግበሪያ ላይ ተጨማሪ ሌላ መተግበሪያ ሲያገኝ ሲሆን ለምሳሌ Screen Recorder ወይም ሌሎች መተግበሪያዎች ሊሆኑ ይችላሉ።ይህም የይለፍ ቃላት(Password)፣ ፒን(Pin) ወይም ሌሎች የክፍያ ዝርዝሮች እና ሚስጥራዊነት ያላቸውን መረጃዎች ለመጠበቅ የተደረገ የደህንነት እርምጃ ነው።*
@@ -169,13 +268,17 @@ Example: Screen recorders, Floating widgets or notepads, Screen dimming apps
         )
     
     # What branches do when the customer is blocked
-    elif user_message == "What branches do when the customer is blocked":
+    elif user_message == "Blocked Customer":
         response = """
-Branches need to understand that “Blocked” and “Locked” are not the same.
+Branches need to know the difference between Blocked and Locked:
+ቅርንጫፎች *በታገዷል* እና *በተቆልፏል* መካከል ያለውን ልዩነት ማወቅ አለባቸው።
 
--   If the status shows “Blocked”, only Third-Level Support at Head Office can fix it. When they unblock it, it is done for everyone at once, not customer by customer.
+- *⛔ Blocked*: Only Head Office (Third-Level Support) can fix this. When they unblock it, it applies to everyone at once—not just one customer.
+*Blocked ማለት ታግዷል ሲሆን በዋናው መ/ቤት የሶስተኛ ደረጃ ድጋፍ ብቻ ነው መስተካከል የሚችለው። እገዳውን ሲያነሱት ለሁሉም በአንድ ጊዜ እንጂ ደንበኛ በደንበኛ አይደለም ስለዚህ ጥያቄያችሁን ልካችሁ እስኪስተካከል በትዕግስት ጠብቁ።*
 
--   If the status shows “Locked”, then the branch itself can unlock it directly in the DBS back office system.
+- *🔓 Locked*: The branch can fix this themselves by unlocking it directly in the DBS back office system.
+*Locked ​ማለት ተቆልፏል ሲሆን ቅርንጫፍ ላይ በቀጥታ DBS back office system በመጠቀም ማስተካከል ይቻላል።*
+
 """
         
         await update.message.reply_text(
@@ -184,7 +287,7 @@ Branches need to understand that “Blocked” and “Locked” are not the same
         )
     
     # How Anbesa Plus supports local language
-    elif user_message == "How Anbesa Plus supports local language":
+    elif user_message == "Anbesa Plus local language":
         response = """Anbesa Plus supports local language options in the app:
 Video Tutorial: https://t.me/anbesaplus/1676
 """
@@ -195,7 +298,7 @@ Video Tutorial: https://t.me/anbesaplus/1676
         )
     
     # How to release trusted device
-    elif user_message == "How to release trusted device":
+    elif user_message == "Unlock Trusted Device":
         response = """How to release trusted device
 Video Tutorial: https://t.me/anbesaplus/2133
                 """
@@ -206,7 +309,7 @@ Video Tutorial: https://t.me/anbesaplus/2133
         )
     
     # How to search customer in DBS backoffice
-    elif user_message == "How to search customer in DBS backoffice":
+    elif user_message == "Search Customer":
         response = """How to search customer in DBS backoffice
 Video tutorial: https://t.me/anbesaplus/2131"""
         
@@ -216,7 +319,7 @@ Video tutorial: https://t.me/anbesaplus/2131"""
         )
     
     # How Forgot password works
-    elif user_message == "How Forgot password works":
+    elif user_message == "Forgot Password":
         response = """How Forgot password works
 Video Tutorial: https://t.me/anbesaplus/1611."""
         
@@ -226,7 +329,7 @@ Video Tutorial: https://t.me/anbesaplus/1611."""
         )
     
     # Android App Download link 
-    elif user_message == "Android App Download link":
+    elif user_message == "Android App Download":
         response = """🔗 Download the AnbesaPlus Android App from:
         https://downloads.anbesabank.com/ """
         
@@ -235,7 +338,7 @@ Video Tutorial: https://t.me/anbesaplus/1611."""
             reply_markup=get_main_keyboard()
         )
     # Iphone App Download Link 
-    elif user_message == "Iphone App Download Link":
+    elif user_message == "Iphone App Download":
         response = """
 ❗️❗️ *These steps are temporary until the production app is officially released on the App Store.* ❗️❗️
 
@@ -264,7 +367,7 @@ Steps to Download TestFlight and Install Anbesa Plus.
             reply_markup=get_main_keyboard()
         )
         # DBS End User Manual for Branches
-    elif user_message == "DBS End User Manual for Branches":
+    elif user_message == "DBS End User Manual":
         response = """Get the DBS End User Manual for Branches:
     https://t.me/anbesaplus/1199 """
         
@@ -275,7 +378,7 @@ Steps to Download TestFlight and Install Anbesa Plus.
     
     
         # DBS Back Office / Portal User Access Request Form
-    elif user_message == "DBS Back Office / Portal User Access Request Form":
+    elif user_message == "DBS Access Request Form":
         response = """Get DBS Back Office / Portal User Access Request Form:
     https://t.me/anbesaplus/3646 """
         
@@ -284,23 +387,35 @@ Steps to Download TestFlight and Install Anbesa Plus.
             reply_markup=get_main_keyboard()
         )
     # Backoffice User Access Updates
-    elif user_message == "Backoffice User Access Updates":
+    elif user_message == "Backoffice Access Updates":
         response = """📢 Backoffice User Access Updates
-Upto this week (09/February) the remaining branches who are not granted access DBS backoffice are the following:
+Upto this week (11/February) the remaining branches who are not granted access DBS backoffice are the following:
 
-1. Afdera
-2. Decheto
-3. Dego
-4. Gurdshola
-5. Hayaarat Akababi
-6. Hayahulet
-7. Jomo
-8. Kazanchis
-9. Nigiste Saba
-10. Selekleka
-11. Wajatmuga
-12. Weyni
-13. Wukro
+1  Abaymado
+2  Adihageray
+3  Adihawsi
+4  Arbaminch
+5  Athlete_Haile
+6  Ayder
+7  Bonga
+8  Gerji
+9  Gijet
+10  Gofa_Gebriel
+11  Goro
+12  Hadnet
+13  Hayahulet
+14  Horaarsedi
+15  Hossaena
+16  Jerer
+17  Jinka
+18  k.Weyane
+19  May_Tsebri
+20  Metema_Yohanes
+21  Mizan_Aman
+22  Momona
+23  Sekota
+24  Sengatera
+25  Wajirat
 
 SMS has already been sent. Those who haven’t requested access yet must request it. If you requested this week, wait for notifications — we’ll send them soon. 
 You are adviced to follow instructions. Use the request form we have shared to you. You can find it in this group or in the bot menu.
@@ -311,34 +426,34 @@ https://t.me/anbesaplus/3646
             reply_markup=get_main_keyboard()
         )
     # Announcements for Invalid Backoffice Requests
-    elif user_message == "❗️Announcements for Invalid Backoffice Requests":
-        response = """Branches who submitted requests earlier but did not receive access:
+    elif user_message == "❗️Invalid Backoffice Requests":
+        response = """Upto this week (11/February) Branches who submitted requests earlier but did not receive access:
 ቀደም ሲል ጥያቄ አቅርባችሁ እስካሁን ፈቃድ (Access) ላልተሰጣችሁ ቅርንጫፎች፣ መዘግየቱ አብዛኛውን ጊዜ የሚፈጠረው ስህተት ከሆነ አሞላል የተያያዘ ነው። በመሆኑም በድጋሚ ጥያቄ ከማቅረባችሁ በፊት የሚከተሉትን ነጥቦች አረጋግጡ::
 
 ```
 1  24Stadium        24  Guroro
 2  Adi Mehameday    25  Hamiday
-3  Adihaki Market   26  Jinka
-4  Adisalem         27  Kalamin
-5  Adishih          28  Kan daero
-6  Adwa             29  Kelkel debri
-7  AfricaGodana     30  Keta
-8  Aradagiorgis     31  Kisadgaba
-9  Ardijeganu       32  Mariam Quiha
-10 Atote            33  Maymekden
-11 Atsbi            34  Meda agame
-12 Aweday           35  MekanisaAbo
-13 Ayat Tafo        36  MEZBIR
-14 Berahle          37  Midre hayelom
-15 Bethel           38  Sarbet
-16 Debre tabor      39  Shalla
-17 Dera             40  Shire Edaga
-18 Edagahamus       41  Suhul shire
-19 Endabaguna       42  Tana
-20 Furi             43  Welwalo
-21 Gerhusrnay       44  Wenbeta
-22 GojamBerenda     45  Wollosefer
-23 Gotera           46  Yechila
+3  Adihaki Market   26  Kalamin
+4  Adisalem         27  Kan daero
+5  Adishih          28  Kelkel debri
+6  Adwa             29  Keta
+7  AfricaGodana     30  Kisadgaba
+8  Aradagiorgis     31  Mariam Quiha
+9  Ardijeganu       32  Maymekden
+10 Atote            33  Meda agame
+11 Atsbi            34  MekanisaAbo
+12 Aweday           35  MEZBIR
+13 Ayat Tafo        36  Midre hayelom
+14 Berahle          37  Sarbet
+15 Bethel           38  Shalla
+16 Debre tabor      39  Shire Edaga
+17 Dera             40  Suhul shire
+18 Edagahamus       41  Tana
+19 Endabaguna       42  Welwalo
+20 Furi             43  Wenbeta
+21 Gerhusrnay       44  Wollosefer
+22 GojamBerenda     45  Yechila
+23 Gotera
 
 ```
 Common reasons for delay or rejection:
@@ -367,7 +482,7 @@ Common reasons for delay or rejection:
         )
         
 # When OTP is not reaching to the customer's mobile
-    elif user_message == "When OTP is not reaching to the customer's mobile":
+    elif user_message == "OTP Not Reaching":
         response = """
 📱 When OTP is not reaching the customer's mobile
 
@@ -396,11 +511,70 @@ If all above checks pass, confirm whether SMS service is temporarily stopped at 
     text=response,
     reply_markup=get_main_keyboard()
 )
+# ALREADY EXISTING PHONE NO
+    elif user_message == "Existing Phone Number":
+        response = """
+When a customer’s status shows *“ALREADY EXISTING PHONE NO”*, it means they tried to set up Digital Access but didn’t finish, for different reasons. First Branches must check if the phone number is in the DBS backoffice. If it doesn’t exist in the DBS backoffice , follow these steps
+
+- 	If the customer forgot their password, they cannot fix it themselves. They must wait for us to reset it so they can start fresh.
+
+- 	To reset, Third-Level Support (IT–Digital Banking) checks whether the customer has already clicked “Forgot Password” and been disabled.
+
+- 	So, the customer must first initiate *“Forgot Password.”*
+
+- 	After that, they need to wait until IT–Digital Banking completes the reset. This is done for all affected customers at once, not individually.
+
+⚠️ Note: IT–Digital Banking usually performs this reset at least twice a week.
+
+"""
+        await context.bot.send_message(
+    chat_id=update.effective_chat.id, 
+    text=response,parse_mode="Markdown",
+    reply_markup=get_main_keyboard()
+)
 
         # await update.message.reply_text(
         #     response,
         #     reply_markup=get_main_keyboard()
         # )
+
+
+        
+    # # Designation of Digital Ambassador
+    # elif user_message == "Designation of Digital Ambassador":
+    #     await update.message.reply_document(
+    #     document=PDF_CACHE["digital_ambassador"],
+    #     filename="designation_digital_ambassador.pdf",
+    #     caption="Designation of Digital Ambassador",
+    #     reply_markup=get_main_keyboard()
+    # )
+
+    # Designation of Digital Ambassador
+    elif user_message == "Designation of Digital Ambassador":
+        await send_cached_file(update, "digital_ambassador_pdf", "Designation of Digital Ambassador")
+
+
+    # elif user_message == "Designation of Digital Ambassador":
+    #     # First upload
+    #     if "digital_ambassador" not in PDF_FILE_IDS:
+    #         msg = await update.message.reply_document(
+    #         document=PDF_CACHE["digital_ambassador"],
+    #         filename="designation_digital_ambassador.pdf",
+    #         caption="Designation of Digital Ambassador",
+    #         reply_markup=get_main_keyboard()
+    #         )
+    #         PDF_FILE_IDS["digital_ambassador"] = msg.document.file_id
+    #     else:
+    #         # Reuse Telegram file_id
+    #         await update.message.reply_document(
+    #         document=PDF_FILE_IDS["digital_ambassador"],
+    #         caption="Designation of Digital Ambassador",
+    #         reply_markup=get_main_keyboard()
+    #     )
+
+
+    # # Log the file_id for later use
+    # print("Telegram file_id:", msg.document.file_id)
 
 
 
